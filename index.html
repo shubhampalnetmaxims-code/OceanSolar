@@ -1,0 +1,50 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ocean Solar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      .custom-multiselect {
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
+      }
+      .custom-multiselect::-webkit-scrollbar {
+        display: none; /* Chrome, Safari, Opera */
+      }
+      .custom-multiselect option {
+        padding: 0.5rem 0.75rem; /* py-2 px-3 */
+        border-radius: 0.25rem; /* rounded-sm */
+        transition: background-color 0.2s;
+        cursor: pointer;
+      }
+      .custom-multiselect option:checked {
+        background: rgb(59 130 246 / 0.8);
+        color: white;
+      }
+      .custom-multiselect option:not(:checked):hover {
+        background-color: #374151; /* gray-700 */
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

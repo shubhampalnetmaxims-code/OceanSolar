@@ -1,0 +1,7 @@
+{
+  "name": "Ocean Solar",
+  "description": "A visually appealing, mobile-first login screen for the Ocean Solar application, featuring a modern design with a solar panel background theme.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
