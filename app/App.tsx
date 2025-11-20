@@ -1,16 +1,17 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   LogoIcon, MailIcon, LockIcon, ChevronLeftIcon, UserIcon, PhoneIcon, MapPinIcon, LocateIcon,
   HomeIcon, EditIcon, TrashIcon, LogOutIcon, CameraIcon, HelpCircleIcon, XIcon, CheckCircleIcon,
-  AlertTriangleIcon, InfoIcon, SupportIcon
+  AlertTriangleIcon, InfoIcon, SupportIcon, BellIcon, LayoutGridIcon
 } from './components/icons';
 
 type AuthScreen = 'welcome' | 'email' | 'otp' | 'profileSetup';
 type AppState = 'auth' | 'dashboard' | 'admin';
 type ActiveTab = 'home' | 'profile' | 'support' | 'enquiryForm' | 'status';
 type AdminScreen = 'login' | 'dashboard';
-type AdminActiveTab = 'enquiries' | 'customers' | 'support';
+type AdminActiveTab = 'dashboard' | 'enquiries' | 'customers' | 'support';
 type NotificationType = 'success' | 'error' | 'info';
 
 const initialEnquiryState = {
@@ -57,6 +58,16 @@ type SupportTicket = {
     messages: Message[];
 };
 
+type NotificationItem = {
+  id: string;
+  recipient: string; // 'admin' or user email
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning';
+  read: boolean;
+  timestamp: string;
+};
+
 const ENQUIRY_FORM_SECTIONS = [
   { title: 'Property Information', fields: ['propertyType', 'propertyTypeOther', 'ownership', 'buildingAge', 'propertyAddress'] },
   { title: 'Roof Details', fields: ['roofType', 'roofTypeOther', 'roofOrientation', 'roofArea', 'roofCondition', 'roofInstallYear', 'leaksLast5Years', 'leaksDescription'] },
@@ -96,10 +107,15 @@ const setupMockData = () => {
       { id: 'TKT-12345', userEmail: 'jane.doe@example.com', subject: 'Question about battery types', createdAt: new Date('2024-07-20T11:00:00Z').toISOString(), status: 'Open', messages: [{ sender: 'customer', text: 'Can you explain the difference between Lithium-ion and Lead-acid batteries?', timestamp: new Date('2024-07-20T11:00:00Z').toISOString() }] },
       { id: 'TKT-54321', userEmail: 'test@gmail.com', subject: 'Installation timeline query', createdAt: new Date('2024-07-22T15:00:00Z').toISOString(), status: 'Open', messages: [{ sender: 'customer', text: 'What is the estimated time for installation after approval?', timestamp: new Date('2024-07-22T15:00:00Z').toISOString() }] }
     ];
+    const mockNotifications: NotificationItem[] = [
+      { id: 'NOT-1', recipient: 'admin', title: 'New Enquiry', message: 'New enquiry received from test@gmail.com', type: 'info', read: false, timestamp: new Date().toISOString() },
+      { id: 'NOT-2', recipient: 'test@gmail.com', title: 'Welcome', message: 'Welcome to Ocean Solar! Start your journey by submitting an enquiry.', type: 'success', read: false, timestamp: new Date().toISOString() }
+    ];
     try {
         localStorage.setItem('oceanSolarProfiles', JSON.stringify(mockProfiles));
         localStorage.setItem('oceanSolarAllEnquiries', JSON.stringify(mockEnquiries));
         localStorage.setItem('oceanSolarSupportTickets', JSON.stringify(mockSupportTickets));
+        localStorage.setItem('oceanSolarNotifications', JSON.stringify(mockNotifications));
     } catch (error) { console.error("Failed to set up mock data in localStorage", error); }
 };
 
@@ -175,13 +191,15 @@ const App: React.FC = () => {
   const [selectedEnquiry, setSelectedEnquiry] = useState<EnquirySubmission | null>(null);
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [adminScreen, setAdminScreen] = useState<AdminScreen>('login');
-  const [adminActiveTab, setAdminActiveTab] = useState<AdminActiveTab>('enquiries');
+  const [adminActiveTab, setAdminActiveTab] = useState<AdminActiveTab>('dashboard');
   const [allEnquiries, setAllEnquiries] = useState<EnquirySubmission[]>([]);
   const [allCustomers, setAllCustomers] = useState<{ [email: string]: Profile }>({});
   const [allSupportTickets, setAllSupportTickets] = useState<SupportTicket[]>([]);
   const [adminSelectedEnquiry, setAdminSelectedEnquiry] = useState<EnquirySubmission | null>(null);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
   const [notification, setNotification] = useState<{ message: string; type: NotificationType; } | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void; } | null>(null);
   const [propertyLocation, setPropertyLocation] = useState<{lat: number, lon: number} | null>(null);
 
@@ -199,6 +217,11 @@ const App: React.FC = () => {
       if (allTicketsRaw) {
         const allTicketsParsed: SupportTicket[] = JSON.parse(allTicketsRaw);
         setSupportTickets(allTicketsParsed.filter(t => t.userEmail === userEmail));
+      }
+      const allNotificationsRaw = localStorage.getItem('oceanSolarNotifications');
+      if (allNotificationsRaw) {
+        const allNotificationsParsed: NotificationItem[] = JSON.parse(allNotificationsRaw);
+        setNotifications(allNotificationsParsed.filter(n => n.recipient === userEmail));
       }
     } catch (error) { console.error("Failed to load user data", error); }
   };
@@ -229,6 +252,30 @@ const App: React.FC = () => {
         setPropertyLocation(null);
     }
   }, [activeTab]);
+
+  // --- Notification Helper ---
+  const createNotification = (recipient: string, title: string, message: string, type: 'info' | 'success' | 'warning') => {
+      const newNotification: NotificationItem = {
+          id: `NOT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          recipient,
+          title,
+          message,
+          type,
+          read: false,
+          timestamp: new Date().toISOString()
+      };
+      const allNotificationsRaw = localStorage.getItem('oceanSolarNotifications') || '[]';
+      const allNotifications: NotificationItem[] = JSON.parse(allNotificationsRaw);
+      allNotifications.unshift(newNotification);
+      localStorage.setItem('oceanSolarNotifications', JSON.stringify(allNotifications));
+      
+      // Update local state if applicable
+      if (recipient === 'admin' && appState === 'admin') {
+          setNotifications(prev => [newNotification, ...prev]);
+      } else if (recipient === email && appState === 'dashboard') {
+          setNotifications(prev => [newNotification, ...prev]);
+      }
+  };
 
   const handleEmailSubmit = (e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); if (!email) return; setAuthScreen('otp'); };
   const handleOtpSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -269,6 +316,7 @@ const App: React.FC = () => {
         allEnquiries.unshift(newEnquiry);
         localStorage.setItem('oceanSolarAllEnquiries', JSON.stringify(allEnquiries));
         setEnquiries(prev => [newEnquiry, ...prev]);
+        createNotification('admin', 'New Enquiry Received', `New enquiry ${newEnquiry.id} from ${email}`, 'info');
     } catch (error) { 
         console.error("Failed to save enquiry", error); 
         showNotification("An error occurred while submitting. Your files might be too large.", 'error'); 
@@ -286,7 +334,7 @@ const App: React.FC = () => {
   const handleUpdateProfile = () => { try { const profiles = JSON.parse(localStorage.getItem('oceanSolarProfiles') || '{}'); profiles[email] = editedProfile; localStorage.setItem('oceanSolarProfiles', JSON.stringify(profiles)); setProfile(editedProfile); setIsEditingProfile(false); showNotification('Profile updated successfully!', 'success'); } catch (error) { console.error("Failed to update profile", error); showNotification("An error occurred while updating your profile.", 'error'); } };
   const handleDeleteAccount = () => { setConfirmModal({ message: 'Are you sure you want to delete your account? This action cannot be undone.', onConfirm: () => { try { const profiles = JSON.parse(localStorage.getItem('oceanSolarProfiles') || '{}'); delete profiles[email]; localStorage.setItem('oceanSolarProfiles', JSON.stringify(profiles)); showNotification('Account deleted successfully.', 'success'); } catch (error) { console.error("Failed to delete profile", error); showNotification('Failed to delete profile from storage.', 'error'); } setConfirmModal(null); handleLogout(); }, }); };
   const handleLogout = () => { localStorage.removeItem('oceanSolarCurrentUserEmail'); setAppState('auth'); setAuthScreen('welcome'); setActiveTab('home'); setEmail(''); setOtp(''); setProfile(initialProfileState); setIsEditingProfile(false); setEnquiryForm(initialEnquiryState); setEnquiries([]); Object.values(formFiles).flat().forEach((f: FileWithPreview) => URL.revokeObjectURL(f.preview)); setFormFiles({}); };
-  const handleCompleteRegistration = () => { if (!profile.fullName || !profile.phone) { showNotification("Please enter full name and phone number.", 'error'); return; } try { const profiles = JSON.parse(localStorage.getItem('oceanSolarProfiles') || '{}'); const lowerCaseEmail = email.toLowerCase(); profiles[lowerCaseEmail] = profile; localStorage.setItem('oceanSolarProfiles', JSON.stringify(profiles)); localStorage.setItem('oceanSolarCurrentUserEmail', lowerCaseEmail); setAppState('dashboard'); loadDataForCurrentUser(lowerCaseEmail); } catch (error) { console.error("Failed to save profile", error); showNotification("An error occurred while saving your profile.", 'error'); } };
+  const handleCompleteRegistration = () => { if (!profile.fullName || !profile.phone) { showNotification("Please enter full name and phone number.", 'error'); return; } try { const profiles = JSON.parse(localStorage.getItem('oceanSolarProfiles') || '{}'); const lowerCaseEmail = email.toLowerCase(); profiles[lowerCaseEmail] = profile; localStorage.setItem('oceanSolarProfiles', JSON.stringify(profiles)); localStorage.setItem('oceanSolarCurrentUserEmail', lowerCaseEmail); setAppState('dashboard'); loadDataForCurrentUser(lowerCaseEmail); createNotification(lowerCaseEmail, 'Welcome', 'Welcome to Ocean Solar!', 'success'); } catch (error) { console.error("Failed to save profile", error); showNotification("An error occurred while saving your profile.", 'error'); } };
   
   const locateUser = async (updateStateCallback: (profileUpdate: Partial<Profile>) => void) => {
     if (!navigator.geolocation) {
@@ -349,10 +397,13 @@ const App: React.FC = () => {
   // --- ADMIN FUNCTIONS ---
   const handleAdminLogin = () => {
     try {
+      const allNotes = JSON.parse(localStorage.getItem('oceanSolarNotifications') || '[]');
+      setNotifications(allNotes.filter((n: NotificationItem) => n.recipient === 'admin'));
       setAllEnquiries(JSON.parse(localStorage.getItem('oceanSolarAllEnquiries') || '[]'));
       setAllCustomers(JSON.parse(localStorage.getItem('oceanSolarProfiles') || '{}'));
       setAllSupportTickets(JSON.parse(localStorage.getItem('oceanSolarSupportTickets') || '[]'));
       setAdminScreen('dashboard');
+      setAdminActiveTab('dashboard');
     } catch (error) { console.error("Failed to load admin data", error); showNotification("Could not load admin data.", 'error'); }
   };
   const handleAdminLogout = () => { setAppState('auth'); setAuthScreen('welcome'); setAdminScreen('login'); setAllEnquiries([]); setAllCustomers({}); setAdminSelectedEnquiry(null); };
@@ -362,6 +413,9 @@ const App: React.FC = () => {
     if(adminSelectedEnquiry?.id === enquiryId) { setAdminSelectedEnquiry(prev => prev ? {...prev, status: newStatus} : null); }
     localStorage.setItem('oceanSolarAllEnquiries', JSON.stringify(updatedEnquiries));
     showNotification(`Enquiry ${enquiryId} status updated to ${newStatus}.`, 'success');
+    
+    const enquiry = allEnquiries.find(e => e.id === enquiryId);
+    if(enquiry) createNotification(enquiry.userEmail, 'Enquiry Update', `Your enquiry ${enquiry.id} status is now ${newStatus}.`, 'info');
   };
   const handleAdminSendMessage = (itemId: string, messageText: string, itemType: 'enquiry' | 'ticket') => {
     if (!messageText.trim()) return;
@@ -371,10 +425,17 @@ const App: React.FC = () => {
       setAllEnquiries(updatedEnquiries);
       if(adminSelectedEnquiry?.id === itemId) { setAdminSelectedEnquiry(prev => prev ? {...prev, messages: [...prev.messages, newMessage]} : null); }
       localStorage.setItem('oceanSolarAllEnquiries', JSON.stringify(updatedEnquiries));
+      
+      const enquiry = allEnquiries.find(e => e.id === itemId);
+      if(enquiry) createNotification(enquiry.userEmail, 'New Message', `Admin replied to enquiry ${itemId}.`, 'info');
+
     } else {
       const updatedTickets = allSupportTickets.map(t => t.id === itemId ? { ...t, messages: [...t.messages, newMessage] } : t);
       setAllSupportTickets(updatedTickets);
       localStorage.setItem('oceanSolarSupportTickets', JSON.stringify(updatedTickets));
+
+      const ticket = allSupportTickets.find(t => t.id === itemId);
+      if(ticket) createNotification(ticket.userEmail, 'Ticket Update', `Update on ticket ${itemId}: ${messageText.substring(0, 30)}...`, 'info');
     }
   };
 
@@ -388,6 +449,7 @@ const App: React.FC = () => {
     localStorage.setItem('oceanSolarAllEnquiries', JSON.stringify(updatedEnquiries));
     setEnquiries(updatedEnquiries.filter(e => e.userEmail === email));
     setSelectedEnquiry(updatedEnquiries.find(e => e.id === enquiryId) || null);
+    createNotification('admin', 'Enquiry Message', `User replied to enquiry ${enquiryId}`, 'info');
   };
   const handleCreateSupportTicket = (subject: string, message: string) => {
     if(!subject.trim() || !message.trim()) {
@@ -401,6 +463,7 @@ const App: React.FC = () => {
     localStorage.setItem('oceanSolarSupportTickets', JSON.stringify(allTicketsParsed));
     setSupportTickets(prev => [newTicket, ...prev]);
     showNotification('Support ticket created successfully!', 'success');
+    createNotification('admin', 'New Ticket', `New ticket created: ${subject}`, 'warning');
   };
   
   const handleSupportEnquiryClick = (enquiry: EnquirySubmission) => {
@@ -416,7 +479,22 @@ const App: React.FC = () => {
   const renderAuthScreen = () => { switch (authScreen) { case 'email': return renderEmailScreen(); case 'otp': return renderOtpScreen(); case 'profileSetup': return renderProfileSetupScreen(); case 'welcome': default: return renderWelcomeScreen(); } };
   
   // --- DASHBOARD SCREENS ---
-  const renderHomeScreen = () => ( <div className="p-8 text-white animate-fade-in"> <h1 className="text-3xl font-bold mb-8">Home</h1> <div className="space-y-4"> <div onClick={() => setActiveTab('enquiryForm')} className="bg-gray-800/70 p-6 rounded-lg border border-gray-700 cursor-pointer hover:bg-gray-700/70 transition-colors"><h2 className="text-xl font-semibold">Solar Enquiry</h2><p className="text-gray-400 mt-1">Start a new enquiry for solar panel installation.</p></div> <div onClick={() => setActiveTab('status')} className="bg-gray-800/70 p-6 rounded-lg border border-gray-700 cursor-pointer hover:bg-gray-700/70 transition-colors"><h2 className="text-xl font-semibold">Check Status</h2><p className="text-gray-400 mt-1">View your submitted enquiries and messages.</p></div> <div onClick={() => setActiveTab('support')} className="bg-gray-800/70 p-6 rounded-lg border border-gray-700 cursor-pointer hover:bg-gray-700/70 transition-colors"><h2 className="text-xl font-semibold">Support</h2><p className="text-gray-400 mt-1">Contact us for help and raise tickets.</p></div> </div> </div> );
+  const renderHomeScreen = () => ( 
+    <div className="p-8 text-white animate-fade-in relative"> 
+        <div className="flex justify-between items-center mb-8">
+            <h1 className="text-3xl font-bold">Home</h1> 
+            <button onClick={() => setShowNotifications(true)} className="relative p-2 text-gray-300 hover:text-white transition-colors">
+                <BellIcon className="w-6 h-6" />
+                {notifications.some(n => !n.read) && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-gray-900"></span>}
+            </button>
+        </div>
+        <div className="space-y-4"> 
+            <div onClick={() => setActiveTab('enquiryForm')} className="bg-gray-800/70 p-6 rounded-lg border border-gray-700 cursor-pointer hover:bg-gray-700/70 transition-colors"><h2 className="text-xl font-semibold">Solar Enquiry</h2><p className="text-gray-400 mt-1">Start a new enquiry for solar panel installation.</p></div> 
+            <div onClick={() => setActiveTab('status')} className="bg-gray-800/70 p-6 rounded-lg border border-gray-700 cursor-pointer hover:bg-gray-700/70 transition-colors"><h2 className="text-xl font-semibold">Check Status</h2><p className="text-gray-400 mt-1">View your submitted enquiries and messages.</p></div> 
+            <div onClick={() => setActiveTab('support')} className="bg-gray-800/70 p-6 rounded-lg border border-gray-700 cursor-pointer hover:bg-gray-700/70 transition-colors"><h2 className="text-xl font-semibold">Support</h2><p className="text-gray-400 mt-1">Contact us for help and raise tickets.</p></div> 
+        </div> 
+    </div> 
+  );
   const renderProfileDashboardScreen = () => { const currentProfile = isEditingProfile ? editedProfile : profile; const profileFields: (keyof typeof profile)[] = ['fullName', 'phone', 'address', 'city', 'postalCode', 'country']; return ( <div className="p-8 text-white animate-fade-in flex flex-col h-full"> <div className="flex justify-between items-center mb-8"><h1 className="text-3xl font-bold">Profile</h1>{!isEditingProfile && (<button onClick={() => { setIsEditingProfile(true); setEditedProfile(profile); }} className="p-2 text-gray-300 hover:text-blue-400"><EditIcon className="w-6 h-6" /></button>)}</div> <div className="flex-grow space-y-4 overflow-y-auto pr-2 -mr-2"> <div className="relative"><MailIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" /><input type="email" value={email} disabled className="w-full bg-gray-900/70 border border-gray-700 rounded-lg py-3 pr-4 pl-12 text-gray-400 cursor-not-allowed" /></div> {profileFields.map(field => { const label = String(field).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()); const Icon = {fullName: UserIcon, phone: PhoneIcon, address: MapPinIcon, city: MapPinIcon, postalCode: MapPinIcon, country: MapPinIcon}[field]; return (<div key={field} className="relative"><Icon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input type="text" name={field} placeholder={label} value={currentProfile[field]} onChange={handleEditedProfileChange} disabled={!isEditingProfile} className="w-full bg-gray-800/50 border border-gray-700 rounded-lg py-3 pr-4 pl-12 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-900/70 disabled:cursor-not-allowed disabled:text-gray-300" /></div>); })} </div> {isEditingProfile ? (<div className="mt-6 flex space-x-4"><button onClick={() => setIsEditingProfile(false)} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg text-lg transition-transform transform active:scale-95">Cancel</button><button onClick={handleUpdateProfile} className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-transform transform active:scale-95">Update Profile</button></div>) : (<div className="mt-6 space-y-4"><button onClick={handleDeleteAccount} className="w-full flex items-center justify-center gap-2 bg-red-800/50 hover:bg-red-700/60 text-red-300 font-bold py-3 px-4 rounded-lg text-lg transition-transform transform active:scale-95"><TrashIcon className="w-5 h-5" /> Delete Account</button><button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg text-lg transition-transform transform active:scale-95"><LogOutIcon className="w-5 h-5" /> Log Out</button></div>)} </div> ); };
   const renderStatusScreen = () => {
     if (selectedEnquiry) return <EnquiryDetailViewCustomer enquiry={selectedEnquiry} onBack={() => setSelectedEnquiry(null)} onSendMessage={handleCustomerReply} />;
@@ -473,6 +551,35 @@ const App: React.FC = () => {
         </div>
     );
   };
+  
+  const NotificationsPanel = () => {
+      if (!showNotifications) return null;
+      return (
+          <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm z-50 animate-fade-in flex flex-col p-6">
+              <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-white">Notifications</h2>
+                  <button onClick={() => setShowNotifications(false)} className="p-2 bg-gray-800 rounded-full hover:bg-gray-700 transition-colors"><XIcon className="w-6 h-6 text-gray-300" /></button>
+              </div>
+              <div className="flex-grow overflow-y-auto space-y-3">
+                  {notifications.length === 0 ? (
+                      <p className="text-gray-400 text-center mt-10">No notifications yet.</p>
+                  ) : (
+                      notifications.map(note => (
+                          <div key={note.id} className={`bg-gray-800 border-l-4 p-4 rounded-r-lg ${note.type === 'success' ? 'border-green-500' : note.type === 'warning' ? 'border-yellow-500' : 'border-blue-500'}`}>
+                              <div className="flex justify-between items-start mb-1">
+                                  <h3 className="font-semibold text-white">{note.title}</h3>
+                                  <span className="text-xs text-gray-500">{new Date(note.timestamp).toLocaleDateString()}</span>
+                              </div>
+                              <p className="text-sm text-gray-300">{note.message}</p>
+                          </div>
+                      ))
+                  )}
+              </div>
+              <button onClick={() => setNotifications([])} className="mt-4 w-full py-2 text-sm text-red-400 hover:text-red-300">Clear All</button>
+          </div>
+      );
+  };
+
   const renderDashboard = () => {
     let content;
     switch (activeTab) {
@@ -484,7 +591,9 @@ const App: React.FC = () => {
       default: content = renderHomeScreen();
     }
     return (
-      <div className="h-full flex flex-col"><div className="flex-grow overflow-y-auto">{content}</div>
+      <div className="h-full flex flex-col relative">
+        <NotificationsPanel />
+        <div className="flex-grow overflow-y-auto">{content}</div>
         {['home', 'profile', 'support'].includes(activeTab) && (
           <div className="flex justify-around items-center bg-gray-900/80 backdrop-blur-sm border-t border-gray-700 p-2">
             <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 p-2 rounded-lg w-24 ${activeTab === 'home' ? 'text-blue-400' : 'text-gray-400 hover:bg-gray-800'}`}><HomeIcon className="w-6 h-6" /><span className="text-xs font-medium">Home</span></button>
@@ -499,7 +608,7 @@ const App: React.FC = () => {
   // --- ADMIN SCREENS ---
   const renderAdminLoginScreen = () => ( <div className="flex flex-col h-full p-8 text-white animate-fade-in"> <div className="flex items-center mb-6"><button onClick={() => setAppState('auth')} className="p-2 -ml-2 text-gray-300 hover:text-white"><ChevronLeftIcon className="w-6 h-6" /></button></div> <div className="flex flex-col items-center text-center mb-8"><LogoIcon className="w-16 h-16 mb-2" /><h2 className="text-3xl font-bold">Admin Panel</h2><p className="text-gray-300">Please login to continue</p></div> <div className="space-y-4"><div className="relative"><MailIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input type="email" value="Solarocean@gmail.com" readOnly className="w-full bg-gray-900/70 border border-gray-700 rounded-lg py-3 pr-4 pl-12 text-gray-300" /></div><div className="relative"><LockIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input type="password" value="solar@123" readOnly className="w-full bg-gray-900/70 border border-gray-700 rounded-lg py-3 pr-4 pl-12 text-gray-300" /></div><button onClick={handleAdminLogin} className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg mt-4">Login</button></div></div> );
   const renderAdminDashboard = () => {
-    const renderContent = () => { switch (adminActiveTab) { case 'enquiries': return renderAdminEnquiries(); case 'customers': return renderAdminCustomers(); case 'support': return renderAdminSupport(); default: return null; } };
+    const renderContent = () => { switch (adminActiveTab) { case 'dashboard': return renderAdminOverview(); case 'enquiries': return renderAdminEnquiries(); case 'customers': return renderAdminCustomers(); case 'support': return renderAdminSupport(); default: return null; } };
     
     const handleTabClick = (tab: AdminActiveTab) => {
       setAdminSelectedEnquiry(null);
@@ -508,15 +617,129 @@ const App: React.FC = () => {
     }
 
     return (
-      <div className="h-full flex text-white bg-gray-900/50">
+      <div className="h-full flex text-white bg-gray-900/50 relative">
         <div className="w-64 bg-gray-900/80 border-r border-gray-700 flex flex-col justify-between">
-          <div> <div className="p-4 border-b border-gray-700 flex items-center gap-3"><LogoIcon className="w-10 h-10" /><span className="font-semibold text-lg">Admin Panel</span></div> <nav className="mt-4 p-2 space-y-1"> <button onClick={() => handleTabClick('enquiries')} className={`w-full text-left text-sm px-4 py-3 rounded-md flex items-center gap-3 transition-colors ${adminActiveTab === 'enquiries' ? 'bg-blue-500/30 text-blue-300' : 'text-gray-400 hover:bg-gray-700/50'}`}><MailIcon className="w-5 h-5" /><span>Enquiries</span></button> <button onClick={() => handleTabClick('customers')} className={`w-full text-left text-sm px-4 py-3 rounded-md flex items-center gap-3 transition-colors ${adminActiveTab === 'customers' ? 'bg-blue-500/30 text-blue-300' : 'text-gray-400 hover:bg-gray-700/50'}`}><UserIcon className="w-5 h-5" /><span>Customers</span></button> <button onClick={() => handleTabClick('support')} className={`w-full text-left text-sm px-4 py-3 rounded-md flex items-center gap-3 transition-colors ${adminActiveTab === 'support' ? 'bg-blue-500/30 text-blue-300' : 'text-gray-400 hover:bg-gray-700/50'}`}><SupportIcon className="w-5 h-5" /><span>Support</span></button> </nav> </div>
+          <div> <div className="p-4 border-b border-gray-700 flex items-center gap-3"><LogoIcon className="w-10 h-10" /><span className="font-semibold text-lg">Admin Panel</span></div> 
+            <nav className="mt-4 p-2 space-y-1"> 
+              <button onClick={() => handleTabClick('dashboard')} className={`w-full text-left text-sm px-4 py-3 rounded-md flex items-center gap-3 transition-colors ${adminActiveTab === 'dashboard' ? 'bg-blue-500/30 text-blue-300' : 'text-gray-400 hover:bg-gray-700/50'}`}><LayoutGridIcon className="w-5 h-5" /><span>Dashboard</span></button> 
+              <button onClick={() => handleTabClick('enquiries')} className={`w-full text-left text-sm px-4 py-3 rounded-md flex items-center gap-3 transition-colors ${adminActiveTab === 'enquiries' ? 'bg-blue-500/30 text-blue-300' : 'text-gray-400 hover:bg-gray-700/50'}`}><MailIcon className="w-5 h-5" /><span>Enquiries</span></button> 
+              <button onClick={() => handleTabClick('customers')} className={`w-full text-left text-sm px-4 py-3 rounded-md flex items-center gap-3 transition-colors ${adminActiveTab === 'customers' ? 'bg-blue-500/30 text-blue-300' : 'text-gray-400 hover:bg-gray-700/50'}`}><UserIcon className="w-5 h-5" /><span>Customers</span></button> 
+              <button onClick={() => handleTabClick('support')} className={`w-full text-left text-sm px-4 py-3 rounded-md flex items-center gap-3 transition-colors ${adminActiveTab === 'support' ? 'bg-blue-500/30 text-blue-300' : 'text-gray-400 hover:bg-gray-700/50'}`}><SupportIcon className="w-5 h-5" /><span>Support</span></button> 
+            </nav> 
+          </div>
           <div className="p-2"><button onClick={handleAdminLogout} className="w-full text-left text-sm px-4 py-3 rounded-md flex items-center gap-3 text-red-400 hover:bg-red-500/20"><LogOutIcon className="w-5 h-5" /><span>Logout</span></button></div>
         </div>
-        <div className="flex-1 flex flex-col overflow-hidden">{renderContent()}</div>
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+            <div className="absolute top-4 right-6 z-20">
+                 <button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2 bg-gray-800 rounded-lg text-gray-300 hover:text-white transition-colors border border-gray-700 hover:bg-gray-700">
+                    <BellIcon className="w-6 h-6" />
+                    {notifications.some(n => !n.read) && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-gray-900"></span>}
+                </button>
+                {showNotifications && (
+                    <div className="absolute right-0 mt-2 w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-50 animate-fade-in">
+                        <div className="p-3 border-b border-gray-700 flex justify-between items-center"><h3 className="font-semibold text-white">Notifications</h3><span className="text-xs text-gray-400">{notifications.length} total</span></div>
+                        <div className="max-h-96 overflow-y-auto">
+                            {notifications.length === 0 ? <p className="text-gray-500 text-sm p-4 text-center">No notifications.</p> : notifications.map(n => (
+                                <div key={n.id} className="p-3 border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors">
+                                    <div className="flex justify-between mb-1"><strong className="text-sm text-gray-200">{n.title}</strong><span className="text-[10px] text-gray-500">{new Date(n.timestamp).toLocaleDateString()}</span></div>
+                                    <p className="text-xs text-gray-400">{n.message}</p>
+                                </div>
+                            ))}
+                        </div>
+                        {notifications.length > 0 && <div className="p-2 bg-gray-800/50 text-center"><button onClick={() => setNotifications([])} className="text-xs text-red-400 hover:text-red-300 font-medium">Clear All</button></div>}
+                    </div>
+                )}
+            </div>
+            {renderContent()}
+        </div>
       </div>
     );
   };
+
+  const renderAdminOverview = () => {
+      const totalEnquiries = allEnquiries.length;
+      const pendingEnquiries = allEnquiries.filter(e => e.status === 'Submitted' || e.status === 'Pending').length;
+      const approvedEnquiries = allEnquiries.filter(e => e.status === 'Approved' || e.status === 'Confirmed').length;
+      const totalCustomers = Object.keys(allCustomers).length;
+      const openTickets = allSupportTickets.filter(t => t.status === 'Open').length;
+      
+      const statusCounts = allEnquiries.reduce((acc, curr) => {
+          acc[curr.status] = (acc[curr.status] || 0) + 1;
+          return acc;
+      }, {} as Record<string, number>);
+      const statuses = ['Submitted', 'In Review', 'Approved', 'Rejected', 'Confirmed'];
+
+      return (
+        <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-gray-900">
+            <h1 className="text-3xl font-bold text-gray-100">Dashboard Overview</h1>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="bg-gray-800 border border-gray-700 p-6 rounded-xl shadow-sm">
+                    <div className="flex items-center justify-between mb-4"><h3 className="text-gray-400 font-medium">Total Enquiries</h3><div className="p-2 bg-blue-500/10 rounded-lg"><MailIcon className="w-6 h-6 text-blue-500" /></div></div>
+                    <p className="text-3xl font-bold text-white">{totalEnquiries}</p>
+                    <p className="text-sm text-green-400 mt-1 flex items-center gap-1"><span>+2</span> <span className="text-gray-500">this week</span></p>
+                </div>
+                <div className="bg-gray-800 border border-gray-700 p-6 rounded-xl shadow-sm">
+                    <div className="flex items-center justify-between mb-4"><h3 className="text-gray-400 font-medium">Pending Action</h3><div className="p-2 bg-yellow-500/10 rounded-lg"><AlertTriangleIcon className="w-6 h-6 text-yellow-500" /></div></div>
+                    <p className="text-3xl font-bold text-white">{pendingEnquiries}</p>
+                    <p className="text-sm text-gray-500 mt-1">Requires attention</p>
+                </div>
+                 <div className="bg-gray-800 border border-gray-700 p-6 rounded-xl shadow-sm">
+                    <div className="flex items-center justify-between mb-4"><h3 className="text-gray-400 font-medium">Total Customers</h3><div className="p-2 bg-green-500/10 rounded-lg"><UserIcon className="w-6 h-6 text-green-500" /></div></div>
+                    <p className="text-3xl font-bold text-white">{totalCustomers}</p>
+                    <p className="text-sm text-gray-500 mt-1">Registered users</p>
+                </div>
+                 <div className="bg-gray-800 border border-gray-700 p-6 rounded-xl shadow-sm">
+                    <div className="flex items-center justify-between mb-4"><h3 className="text-gray-400 font-medium">Open Tickets</h3><div className="p-2 bg-red-500/10 rounded-lg"><SupportIcon className="w-6 h-6 text-red-500" /></div></div>
+                    <p className="text-3xl font-bold text-white">{openTickets}</p>
+                    <p className="text-sm text-gray-500 mt-1">Support requests</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+                    <h3 className="text-lg font-bold text-white mb-6">Enquiry Status Breakdown</h3>
+                    <div className="space-y-4">
+                        {statuses.map(status => {
+                            const count = statusCounts[status] || 0;
+                            const percentage = totalEnquiries > 0 ? (count / totalEnquiries) * 100 : 0;
+                            return (
+                                <div key={status}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span className="text-gray-300">{status}</span>
+                                        <span className="text-gray-400">{count} ({Math.round(percentage)}%)</span>
+                                    </div>
+                                    <div className="w-full bg-gray-700 rounded-full h-2.5">
+                                        <div className="bg-blue-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+                     <div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-white">Recent Enquiries</h3><button onClick={() => setAdminActiveTab('enquiries')} className="text-sm text-blue-400 hover:text-blue-300">View All</button></div>
+                     <div className="space-y-4">
+                        {allEnquiries.slice(0, 5).map(enq => (
+                            <div key={enq.id} className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg border border-gray-700/50">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-gray-400"><UserIcon className="w-5 h-5" /></div>
+                                    <div>
+                                        <p className="text-sm font-semibold text-white">{enq.userEmail}</p>
+                                        <p className="text-xs text-gray-500">{enq.id}</p>
+                                    </div>
+                                </div>
+                                <StatusPill status={enq.status} />
+                            </div>
+                        ))}
+                        {allEnquiries.length === 0 && <p className="text-gray-500 text-center py-4">No enquiries yet.</p>}
+                     </div>
+                </div>
+            </div>
+        </div>
+      );
+  };
+
   const renderAdminEnquiries = () => {
     if (adminSelectedEnquiry) {
         const customerProfile = allCustomers[adminSelectedEnquiry.userEmail];
